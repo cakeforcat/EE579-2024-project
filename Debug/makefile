@@ -12,7 +12,9 @@ GEN_CMDS__FLAG :=
 ORDERED_OBJS += \
 "./GPIO.obj" \
 "./Timers.obj" \
+"./i2c.obj" \
 "./main.obj" \
+"./mpu6050.obj" \
 "../lnk_msp430g2553.cmd" \
 $(GEN_CMDS__FLAG) \
 -llibc.a \
@@ -143,8 +145,8 @@ RC\ Car\ 2024.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 # Other Targets
 clean:
 	-$(RM) $(EXE_OUTPUTS__QUOTED)
-	-$(RM) "GPIO.obj" "Timers.obj" "main.obj" 
-	-$(RM) "GPIO.d" "Timers.d" "main.d" 
+	-$(RM) "GPIO.obj" "Timers.obj" "i2c.obj" "main.obj" "mpu6050.obj" 
+	-$(RM) "GPIO.d" "Timers.d" "i2c.d" "main.d" "mpu6050.d" 
 	-@echo 'Finished clean'
 	-@echo ' '
 

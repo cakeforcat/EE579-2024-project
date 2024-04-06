@@ -11,31 +11,43 @@ CMD_SRCS += \
 C_SRCS += \
 ../GPIO.c \
 ../Timers.c \
-../main.c 
+../i2c.c \
+../main.c \
+../mpu6050.c 
 
 C_DEPS += \
 ./GPIO.d \
 ./Timers.d \
-./main.d 
+./i2c.d \
+./main.d \
+./mpu6050.d 
 
 OBJS += \
 ./GPIO.obj \
 ./Timers.obj \
-./main.obj 
+./i2c.obj \
+./main.obj \
+./mpu6050.obj 
 
 OBJS__QUOTED += \
 "GPIO.obj" \
 "Timers.obj" \
-"main.obj" 
+"i2c.obj" \
+"main.obj" \
+"mpu6050.obj" 
 
 C_DEPS__QUOTED += \
 "GPIO.d" \
 "Timers.d" \
-"main.d" 
+"i2c.d" \
+"main.d" \
+"mpu6050.d" 
 
 C_SRCS__QUOTED += \
 "../GPIO.c" \
 "../Timers.c" \
-"../main.c" 
+"../i2c.c" \
+"../main.c" \
+"../mpu6050.c" 
 
 

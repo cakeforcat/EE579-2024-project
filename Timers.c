@@ -15,7 +15,6 @@ void configTimerA1()
     // Configure control of timer A1
     TA1CTL |= TASSEL_2;                 // Select SMCLK
     TA1CTL |= MC_1;                     // Select up mode - counts to CCR0 (keep in mind for calcing t for pulse)
-    TA1CTL &= ~TAIFG;                   // Clear IFG
 
     // Configure capture/compare 0 - used for scheduler
     TA1CCTL0 = CCIE;                    // Enable interrupts
@@ -28,6 +27,7 @@ void configTimerA1()
     TA1CCTL1 |= CM_3;                   // Capture rising & falling edge (border
     TA1CCTL1 |= SCS;                    // Synchronous capture
 
+    TA1CTL &= ~TAIFG;                   // Clear IFG
 
 }
 

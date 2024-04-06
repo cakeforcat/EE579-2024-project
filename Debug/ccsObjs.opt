@@ -1,5 +1,7 @@
 "./GPIO.obj"
 "./Timers.obj"
+"./i2c.obj"
 "./main.obj"
+"./mpu6050.obj"
 "../lnk_msp430g2553.cmd"
 -llibc.a
