@@ -22,12 +22,12 @@ void initI2C(void) {
 }
 
 // Function to check if I2C is busy - WARNING:
-// According to MSP430 Erreta " the UCBUSY bit might get stuck to 1" - may cause issues
+// According to MSP430 Erreta " the UCBBUSY bit might get stuck to 1" - may cause issues
 int IsI2CBusy(){
         if(UCB0STAT & UCBBUSY){
             return 1;                           // BUS BUSY
         } else{
-            return 0;                            // BUS NOT BUSY
+            return 0;                           // BUS NOT BUSY
         }
 }
 
@@ -61,6 +61,7 @@ void TransmitByte(char register_address, char data){
     while((IFG2 & UCB0TXIFG) == 0);             // Wait...
     UCB0CTL1 |= UCTXSTP;                        // STOP
     IFG2 &= ~UCB0TXIFG;                         // Clear Flag
+
 }
 
 
