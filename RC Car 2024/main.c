@@ -16,7 +16,6 @@
 // Structure instances to store current time and scheduled events
 struct Time current_time = {0, 0};                          // Self explanatory
 struct Time change_duty = {2, 0};                           // Time to schedule change in servo duty cycle
-struct Time read_gyro = {0, -1};                            // Time to schedule read of gyro angle
 struct Time make_decision = {0, -1};                        // Time to make a decision after scanning
 struct Time check_colour = {0, -1};
 
@@ -36,7 +35,7 @@ volatile int e = 0;
 volatile float  distance;
 float avg_distances[11];                                     // Array to store avg distance recorded at 7 positions
 int position_index = -1;                                     // Index of array above
-int closest_position = 0;
+int closest_position;
 
 // Servo vars
 struct Pulse servo_pulse = {{0, 20}, {0, -1}};
@@ -48,12 +47,17 @@ volatile float gyro_error;
 volatile float gyro_angle = 0.0;
 struct Pulse gyro_pulse = {{0, 0}, {0, 0}};
 float time_elapsed;
-int read_gyro_active = 0;
+float desired_angle;
+volatile float delta;
 
 // Algorithm state var
 int state = 0;
 int turn_count = 0;
 int n_turns;
+
+// UART
+int gyro_print;
+
 
 // Scheduler function (James' example on MyPlace)
 struct Time Schedule (int duration)
@@ -85,11 +89,9 @@ __interrupt void TIMER1_ISR0(void)
 
         if (state == WIDE_SCAN_STATE){
             turn_time = Schedule(510);
-            if (closest_position != 5){
-                n_turns = (closest_position - 5) * 2;       // 0-11: <5 is between -90 & 0 deg
-            } else {
-                n_turns = 0;                                // closest pos is fwd - no turning
-            }
+
+            desired_angle = gyro_angle + closest_position;
+
 
         } else if (state == NARROW_SCAN_STATE){
             if (IsWall(avg_distances)){                     // See definitions.c
@@ -106,7 +108,49 @@ __interrupt void TIMER1_ISR0(void)
 
     if (state == TURN_STATE && IsTime(turn_time)){          // If in turn state and its time to turn
 
+            delta = gyro_angle - desired_angle;
 
+
+            if (abs(delta) <= 5){
+                trig_pulse.start_time = Schedule(1000);     // Start measuring distance again
+                move_fwd_pwm.start_time = Schedule(400);    // And schedule fwd movement as we're entering Honing state
+                turn_time = Schedule(-1);
+                state +=1;
+
+            } else{
+
+
+                move_bwd_pwm.start_time = Schedule(100);    // Swinging fwd and bwd
+                move_bwd.stop_time = Schedule(350);
+
+                move_fwd_pwm.start_time = Schedule(400);
+                move_fwd.stop_time = Schedule(700);
+
+                if (delta>0){
+                    move_left.start_time = Schedule(100);   // (bwd and left)
+                    move_left.stop_time = Schedule(350);
+
+                    move_right.start_time = Schedule(400);  // (fwd and right)
+                    move_right.stop_time = Schedule(700);
+
+                } else{
+
+                    move_right.start_time = Schedule(100);
+                    move_right.stop_time = Schedule(350);
+
+                    move_left.start_time = Schedule(400);
+                    move_left.stop_time = Schedule(700);
+
+                }
+
+                trig_pulse.start_time = Schedule(800);
+
+                turn_time = Schedule(1000);
+
+            }
+
+
+            /**
             if (turn_count == abs(n_turns)){                // Take abs as right is -ve and left is +ve
                                                             // Once we're done turning...
                 trig_pulse.start_time = Schedule(1000);     // Start measuring distance again
@@ -139,6 +183,8 @@ __interrupt void TIMER1_ISR0(void)
                 turn_time = Schedule(1200);                 // Schedule next turn
                 turn_count ++;
             }
+
+            **/
     }
 
     if (state == HONING_STATE){                             // When in honing state - keep monitoring distance
@@ -202,7 +248,7 @@ __interrupt void TIMER1_ISR0(void)
 
     // Start movement in x or y direction
     if IsTime(move_fwd.start_time){
-        P1OUT |= FWD;                                       // Move fwd at 100% speed
+        P2OUT |= FWD;                                       // Move fwd at 100% speed
     }
     if IsTime(move_bwd.start_time){
         P2OUT |= BWD;                                       // Bwd at 100% speed
@@ -216,7 +262,7 @@ __interrupt void TIMER1_ISR0(void)
 
     // Stop movement in x or y direction
     if IsTime(move_fwd.stop_time){
-        P1OUT &= ~FWD;                                      // Make pin low
+        P2OUT &= ~FWD;                                      // Make pin low
         move_fwd_pwm.start_time = Schedule(-1);             // And stop PWMing
         move_fwd_pwm.stop_time = Schedule(-1);
     }
@@ -234,11 +280,11 @@ __interrupt void TIMER1_ISR0(void)
 
     // Speed controlled movements
     if IsTime(move_fwd_pwm.start_time){                     // Move Fwd 50% speed
-        P1OUT|= FWD;
+        P2OUT|= FWD;
         move_fwd_pwm.stop_time = Schedule(SPEED_PWM_HIGH);  // Adjust speed in Definitions.h if required
     }
     else if IsTime(move_fwd_pwm.stop_time){
-        P1OUT &= ~FWD;
+        P2OUT &= ~FWD;
         move_fwd_pwm.start_time = Schedule(SPEED_PWM_LOW);
     }
 
@@ -290,6 +336,7 @@ __interrupt void Timer_A(void) {
 }
 
 
+
 int main(void)
 {
     WDTCTL = WDTPW | WDTHOLD;                               // stop watchdog timer
@@ -298,10 +345,10 @@ int main(void)
     P1OUT = 0;                                              // Reset all OUT ports
     P2OUT = 0;
     P3OUT = 0;
-
-    P1DIR |= FWD;                                           // Config Motor A Pins
-    P2DIR |= BWD;
+                                           // Config Motor A Pins
+    P2DIR |= BWD + FWD;
     P3DIR |= LEFT + RIGHT;                                  // Config Motor B Pins
+
 
     TA0CCTL2 = OUTMOD_7;                                    // Config TA0 for PWM
     TA0CTL = TASSEL_2 | MC_1;
@@ -314,28 +361,53 @@ int main(void)
 
     P3DIR &= ~IR;
 
+    P1SEL = BIT1 + BIT2 ;                     // P1.1 = RXD, P1.2=TXD
+    P1SEL2 = BIT1 + BIT2 ;                     // P1.1 = RXD, P1.2=TXD
+    UCA0CTL1 |= UCSSEL_1;                     // CLK = ACLK
+    UCA0BR0 = 0x03;                           // 32kHz/9600 = 3.41
+    UCA0BR1 = 0x00;                           //
+    UCA0MCTL = UCBRS1 + UCBRS0;               // Modulation UCBRSx = 3
+    UCA0CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
+    IE2 |= UCA0RXIE;                          // Enable USCI_A0 RX interrupt
+
+    __delay_cycles(1000000);
+
     //IFG2 = 0x00;                                           // Reset IFG2
-    //initI2C();                                             // Init I2C for reading mpu6050
-    //while ( IsI2CBusy() );
+    initI2C();                                             // Init I2C for reading mpu6050
+    while ( IsI2CBusy() );
 
-    //initMPU();                                             // Wake up MPU & config registers
+    initMPU();                                             // Wake up MPU & config registers
 
-    //gyro_error = CalibrateGyro(200);                       // Get average error of gyro z axis
-    //read_gyro = Schedule(1);                               // Read gyro must only occur after gyro has been calibrated;
+    gyro_error = CalibrateGyro(100);                       // Get average error of gyro z axis
 
     configTimerA1();
     state+=1;
 
-    //volatile char check = ReceiveByte(0x1B);
+    volatile float temp1 = 0;
 
     //LPM1;
 
     while (1) {
-        //gyro_pulse.start_time = gyro_pulse.stop_time;
-        //gyro_pulse.stop_time = current_time;
 
-        //time_elapsed = CalcElapsedTime(gyro_pulse.start_time, gyro_pulse.stop_time);
-        //gyro_angle += GetZReading(gyro_error) * time_elapsed;
+
+        gyro_pulse.start_time = gyro_pulse.stop_time;
+        gyro_pulse.stop_time = current_time;
+
+        time_elapsed = CalcElapsedTime(gyro_pulse.start_time, gyro_pulse.stop_time);
+        temp1 = GetZReading(gyro_error) * time_elapsed;
+
+        if (abs(temp1)<=5){
+            gyro_angle += temp1;
+        } else{
+            gyro_angle-= temp1;
+        }
+
+
+
+        if (time_elapsed >= 0.1){
+            time_elapsed = 0;
+        }
+
 
     }
     return 0;

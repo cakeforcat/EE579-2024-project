@@ -6,19 +6,24 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 #include <stdbool.h>
+#include <msp430.h>
 
 #ifndef DEFINITIONS_H_
 #define DEFINITIONS_H_
 
 
 // PORT 1
-#define FWD     (BIT4)                                       // Motor AIN1
+#define RXD     (BIT1)                                       //
+#define TXD     (BIT2)
 #define SCL     (BIT6)                                       // MPU6050 - I2C clock - defining here for ref (used in i2c.h)
 #define SDA     (BIT7)                                       // MPU6050 - I2C Data
 
 // PORT 2
-#define BWD     (BIT2)                                       // Motor AIN2
+#define BWD     (BIT0)                                       // Motor AIN1
+#define FWD     (BIT1)                                       // Motor AIN2
 #define ECHO    (BIT5)                                       // HCSR04 - Echo tied to CC with TA1_1
 
 // PORT 3
@@ -29,8 +34,8 @@
 #define TRIG    (BIT7)                                       // HCSR04 - Trigger pulse GPIO
 
 // PWM DUTY
-#define SPEED_PWM_HIGH 5
-#define SPEED_PWM_LOW 5
+#define SPEED_PWM_HIGH 4
+#define SPEED_PWM_LOW 6
 
 // STATES
 #define IDLE_STATE 0
@@ -58,10 +63,19 @@ struct Pulse {                                              // Start and stop ti
     struct Time stop_time;
 };
 
+struct Angle{
+    float current;
+    float desired;
+};
+
 // Helper Function Prototypes
 extern float CalcDistance(struct Echo start_time, struct Echo end_time);
 extern float CalcElapsedTime(struct Time startTime, struct Time stopTime);
 extern int FindMinIndex(float array[]);
 extern bool IsWall(float array[]);
+extern void send_char(char c);
+extern void send_string(const char *str);
+extern void send_int(int num);
+
 
 #endif DEFINITIONS_H_

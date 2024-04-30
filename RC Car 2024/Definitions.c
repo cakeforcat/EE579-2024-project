@@ -75,7 +75,11 @@ int FindMinIndex(float array[]) {
         }
     }
 
-    return min_index; // Return the index of the smallest number
+    // Calculate the angle corresponding to the min_index
+    int angle = -60 + min_index * 12;
+
+    return angle; // Return the angle in degrees
+
 }
 
 // Function to check if detected object is a wall
@@ -90,7 +94,7 @@ bool IsWall(float array[]) {
     for (i = 0; i <= size - 5; i++) {
         bool consecutive = true;
         for (j = i + 1; j < i + 5; j++) {
-            if (abs(array[j] - array[j - 1]) > 7) {
+            if (abs(array[j] - array[j - 1]) > 3) {
                 consecutive = false;
                 break;
             }
@@ -101,5 +105,26 @@ bool IsWall(float array[]) {
     }
     return false;
 }
+
+void send_char(char c) {
+    // Wait for the transmit buffer to be ready
+    while (!(IFG2 & UCA0TXIFG)); // Check the UART transmit interrupt flag
+    UCA0TXBUF = c;               // Load the character into the UART transmit buffer
+}
+
+// Function to send a string over UART
+void send_string(const char *str) {
+    while (*str) {
+        send_char(*str++); // Send each character of the string
+    }
+}
+
+// Function to send an integer over UART
+void send_int(int num) {
+    char buffer[12]; // Buffer to hold the integer as a string
+    sprintf(buffer, "%d\r\n", num); // Convert the integer to a string
+    send_string(buffer); // Send the converted string
+}
+
 
 

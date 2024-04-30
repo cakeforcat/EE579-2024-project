@@ -15,7 +15,7 @@ void initI2C(void) {
     UCB0CTL1 |= UCSWRST;                        // Enable SW reset - known state
     UCB0CTL0 = UCMST + UCMODE_3 + UCSYNC;       // Make MCU master & put in synchronous mode
     UCB0CTL1 = UCSSEL_2 + UCSWRST;              // SMCLK approx 1 MHz
-    UCB0BR0 = 2;                                // /3 to get fast rate approx 400 kHz
+    UCB0BR0 = 9;                                // /3 to get fast rate approx 400 kHz
     UCB0BR1 = 1;
     UCB0I2CSA = MPU_SLAVE_ADDRESS;              // Set slave address of mpu6050
     UCB0CTL1 &= ~UCSWRST;                       // Exit SW reset now that registers are configured

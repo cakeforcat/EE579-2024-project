@@ -17,10 +17,12 @@
 #define MPU_SLAVE_ADDRESS    0x68
 #define MPU_WHO_AM_I         0x75
 #define MPU_PWR_MGMT_1       0x6B
+#define MPU_PATH_RESET       0x68
 #define MPU_CONFIG           0x1A
 #define MPU_CONFIG_GYRO      0x1B
 #define MPU_GYRO_ZOUT_H      0x47
 #define MPU_GYRO_ZOUT_L      0x48
+#define MPU_SMPLRT_DIV       0x19
 
 #define GYRO_SF 32.8
 

@@ -14,13 +14,19 @@ void WakeUpMPU(){
 
 void ConfigMPU(){
 
+    TransmitByte(MPU_PWR_MGMT_1, 0x80);
+    __delay_cycles(100000);
+
+    TransmitByte(MPU_PATH_RESET, 0x05);
+    __delay_cycles(100000);
+
     // CONFIG REG: BIT2-0 is DLPF_CFG - Set low pass filter B= 20 Hz w/ 8.3 ms delay (filters gyro noise)
     //             BIT5-3 is EXT_SYNC_SET - SYNC sampling rate to gyro clock (recommended)
     TransmitByte(MPU_CONFIG, 0x0C);
 
     // CONFIG_GYRO REG: BIT4-3 is FS_SEL -  set to 1000 deg/s
     // 1000 deg/s -> 32.8 LSB per deg/s i.e. for every deg/s sensor output changes by 32.8 LSB
-    TransmitByte(MPU_CONFIG_GYRO, 0x11);
+    TransmitByte(MPU_CONFIG_GYRO, 0x10);
 
 }
 
@@ -63,8 +69,8 @@ volatile float GetZReading(volatile float error){
     int16_t gyro_raw_z = 0.0;
     volatile float gyro_z;
 
-    gyro_z_msb = ReceiveByte(MPU_GYRO_ZOUT_H);
-    gyro_z_lsb = ReceiveByte(MPU_GYRO_ZOUT_L);
+    gyro_z_msb = ReceiveByte(0x47);
+    gyro_z_lsb = ReceiveByte(0x48);
 
     gyro_raw_z = (gyro_z_msb<<8) | gyro_z_lsb;
 
