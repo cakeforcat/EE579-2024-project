@@ -14,7 +14,7 @@
 
 // Structure instances to store current time and scheduled events
 struct Time current_time = {0, 0};                          // Self explanatory
-struct Time change_duty = {2, 0};                           // Time to schedule change in servo duty cycle
+struct Time change_duty = {0, -1};                           // Time to schedule change in servo duty cycle
 struct Time make_decision = {0, -1};                        // Time to make a decision after scanning
 struct Time check_colour = {0, -1};
 
@@ -31,9 +31,9 @@ struct Time  turn_time = {0, -1};
 struct Pulse trig_pulse = {{0, -60}, {0, -1}};               // Trig pulse - PWM 70ms w/ 10ms duty cycle
 struct Echo edge_times[2];
 volatile int e = 0;
-volatile float  distance;
+volatile float  distance = 1000;
 float avg_distances[11];                                     // Array to store avg distance recorded at 7 positions
-int position_index = -1;                                     // Index of array above
+int position_index = 0;                                     // Index of array above
 int closest_position;
 
 // Servo vars
@@ -82,6 +82,14 @@ __interrupt void TIMER1_ISR0(void)
         }
     }
 
+    if (state == GO_PLAY_STATE) {
+
+        if (IsTime(move_fwd.stop_time) || distance <= 120){
+            move_fwd.stop_time = current_time;
+            change_duty = Schedule(200);
+            state = WIDE_SCAN_STATE;
+        }
+    }
     if IsTime(make_decision){                               // Time to make decision after scanning?
 
         if (state == WIDE_SCAN_STATE){
@@ -186,7 +194,7 @@ __interrupt void TIMER1_ISR0(void)
     if IsTime(trig_pulse.stop_time){                        // Is=s it time to end TRIG pulse?
         P3OUT &= ~TRIG;                                     // Make low
 
-        if (state==HONING_STATE){
+        if (state==HONING_STATE || state == GO_PLAY_STATE){
             trig_pulse.start_time = Schedule(60);           // Schedule the next TRIG pulse
         }
     }
@@ -311,35 +319,38 @@ int main(void)
     P1OUT = 0;                                              // Reset all OUT ports
     P2OUT = 0;
     P3OUT = 0;
-                                           // Config Motor A Pins
-    P2DIR |= BWD + FWD;
-    P3DIR |= LEFT + RIGHT;                                  // Config Motor B Pins
 
+    P2DIR |= BWD + FWD;                                     // Config Motor A Pins
+    P3DIR |= LEFT + RIGHT;                                  // Config Motor B Pins
 
     TA0CCTL2 = OUTMOD_7;                                    // Config TA0 for PWM
     TA0CTL = TASSEL_2 | MC_1;
 
     P3SEL |= SERVO;                                         // Config SERVO pin to receive PWM from TA0.2
     P3DIR |= SERVO;
-
     P3DIR |= TRIG;                                          // Config TRIG pin as output
     P2SEL |= ECHO;                                          // Config ECHO pin for CC
+    P3DIR &= ~IR;                                           // IR as input
 
-    P3DIR &= ~IR;
-
-    initUART();
-
+    initUART();                                             // Init UART
     initI2C();                                              // Init I2C for reading mpu6050
     while ( IsI2CBusy() );
 
-    __delay_cycles(1000000);                                // Need to wait before talking to mpu
+    __delay_cycles(1000000);                                // Need to wait before talking to mpu ~35 ms start up + some time to lay still before calibration
 
     initMPU();                                              // Wake up MPU & config registers
 
-    gyro_error = CalibrateGyro(100);                       // Get average error of gyro z axis
+    gyro_error = CalibrateGyro(100);                        // Get average error of gyro z axis
 
-    configTimerA1();
-    state+=1;
+    configTimerA1();                                        // Congig scheduler clock + echo capture reg
+
+    // Get ready to go
+    TA0CCR0 = 20000;
+    TA0CCR2 = 1200;
+    move_fwd_pwm.start_time = Schedule(500);
+    trig_pulse.start_time = Schedule(700);
+    move_fwd.stop_time = Schedule(3700);
+    state+=1;                                               // Move out of INIT and into go play state
 
     volatile float temp1 = 0;
 
@@ -354,7 +365,6 @@ int main(void)
         if (abs(temp1)<=5){
             gyro_angle += temp1;
         } else{
-
             initI2C();
             while ( IsI2CBusy() );
             initMPU();

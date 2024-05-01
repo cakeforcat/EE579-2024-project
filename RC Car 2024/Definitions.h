@@ -39,9 +39,10 @@
 
 // STATES
 #define IDLE_STATE 0
-#define WIDE_SCAN_STATE 1
-#define TURN_STATE 2
-#define HONING_STATE 3
+#define GO_PLAY_STATE 1
+#define WIDE_SCAN_STATE 2
+#define TURN_STATE 3
+#define HONING_STATE 4
 #define NARROW_SCAN_STATE 4
 
 // Macro for checking if it is time (taken from James' example on MyPlace)
