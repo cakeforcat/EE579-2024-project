@@ -8,7 +8,6 @@
 #include <stdlib.h>
 
 #include "Timers.h"
-#include "GPIO.h"
 #include "I2C.h"
 #include "mpu6050.h"
 #include "Definitions.h"
@@ -55,8 +54,6 @@ int state = 0;
 int turn_count = 0;
 int n_turns;
 
-// UART
-int gyro_print;
 
 
 // Scheduler function (James' example on MyPlace)
@@ -88,37 +85,38 @@ __interrupt void TIMER1_ISR0(void)
     if IsTime(make_decision){                               // Time to make decision after scanning?
 
         if (state == WIDE_SCAN_STATE){
-            turn_time = Schedule(510);
-
+            turn_time = Schedule(210);
             desired_angle = gyro_angle + closest_position;
-
+            state = TURN_STATE;
 
         } else if (state == NARROW_SCAN_STATE){
             if (IsWall(avg_distances)){                     // See definitions.c
                 move_bwd_pwm.start_time = current_time;
                 move_bwd.stop_time  = Schedule(500);
+                state = WIDE_SCAN_STATE;
+                change_duty = Schedule(600);
             } else{
                 move_fwd_pwm.start_time = current_time;
                 move_fwd.stop_time  = Schedule(500);
                 check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
+                state = TURN_STATE;
             }
         }
-        state+=1;
     }
 
     if (state == TURN_STATE && IsTime(turn_time)){          // If in turn state and its time to turn
 
             delta = gyro_angle - desired_angle;
 
-
-            if (abs(delta) <= 5){
-                trig_pulse.start_time = Schedule(1000);     // Start measuring distance again
-                move_fwd_pwm.start_time = Schedule(400);    // And schedule fwd movement as we're entering Honing state
+            if (abs(delta) <= 5 || distance <= 25 || (abs(delta) <= 12 && distance <= 60)){
+                distance = 1000;
+                trig_pulse.start_time = Schedule(500);      // Start measuring distance again
+                move_fwd_pwm.start_time = Schedule(200);    // And schedule fwd movement as we're entering Honing state
+                move_fwd.stop_time = Schedule(1000);        // Set a timeout for how long we want to hone for in case we miss target
                 turn_time = Schedule(-1);
-                state +=1;
+                state = HONING_STATE;
 
             } else{
-
 
                 move_bwd_pwm.start_time = Schedule(100);    // Swinging fwd and bwd
                 move_bwd.stop_time = Schedule(350);
@@ -143,59 +141,24 @@ __interrupt void TIMER1_ISR0(void)
 
                 }
 
-                trig_pulse.start_time = Schedule(800);
-
-                turn_time = Schedule(1000);
-
+                trig_pulse.start_time = Schedule(750);
+                turn_time = Schedule(900);
             }
-
-
-            /**
-            if (turn_count == abs(n_turns)){                // Take abs as right is -ve and left is +ve
-                                                            // Once we're done turning...
-                trig_pulse.start_time = Schedule(1000);     // Start measuring distance again
-                move_fwd_pwm.start_time = Schedule(400);    // And schedule fwd movement as we're entering Honing state
-                turn_time = Schedule(-1);
-                state +=1;                                  // Go to HONING STATE
-                turn_count = 0;
-
-            } else{
-
-                move_bwd_pwm.start_time = Schedule(100);    // Swinging fwd and bwd
-                move_bwd.stop_time = Schedule(550);
-
-                move_fwd_pwm.start_time = Schedule(600);
-                move_fwd.stop_time = Schedule(1100);
-
-                if (n_turns < 0){                           // If -ve we want to turn right
-                    move_left.start_time = Schedule(100);   // (bwd and left)
-                    move_left.stop_time = Schedule(550);
-
-                    move_right.start_time = Schedule(600);  // (fwd and right)
-                    move_right.stop_time = Schedule(1100);
-                } else {
-                    move_right.start_time = Schedule(100);
-                    move_right.stop_time = Schedule(550);
-
-                    move_left.start_time = Schedule(600);
-                    move_left.stop_time = Schedule(1100);
-                }
-                turn_time = Schedule(1200);                 // Schedule next turn
-                turn_count ++;
-            }
-
-            **/
     }
 
     if (state == HONING_STATE){                             // When in honing state - keep monitoring distance
         if (distance <= 25){                                // If very close
             move_fwd.stop_time = current_time;              // stop
-            change_duty = Schedule(700);                    // Scan...
-            state +=1;                                      // Go to NARROW SCAN
-        }
-        else if (distance <= 40){                           // If kind of close
+
+            move_bwd.start_time = current_time;
+            move_bwd.stop_time = Schedule(200);
+
+            change_duty = Schedule(400);                    // Scan...
+            state = NARROW_SCAN_STATE;                      // Go to NARROW SCAN
+        }                                                   // If kind of close or timeout
+        else if (distance <= 40||IsTime(move_fwd.stop_time)){
             move_fwd.stop_time = current_time;              // Stop
-            change_duty = Schedule(700);                    // Scan...
+            change_duty = Schedule(400);                    // Scan...
             state = WIDE_SCAN_STATE;                        // Go to WIDE SCAN
         }
     }
@@ -210,6 +173,9 @@ __interrupt void TIMER1_ISR0(void)
             move_bwd.start_time = current_time;
             move_bwd.stop_time = Schedule(500);
         }
+        state = WIDE_SCAN_STATE;
+        change_duty = Schedule(1300);
+
     }
 
     if IsTime(trig_pulse.start_time){                       // Is it time to make TRIG pulse high?
@@ -234,15 +200,15 @@ __interrupt void TIMER1_ISR0(void)
             TA0CCR2 = 300 + pos;
         } else if (state == NARROW_SCAN_STATE){
             pos = position_index*125;
-            TA0CCR2 = 700 + pos;
+            TA0CCR2 = 550 + pos;
         }
 
         if (position_index == 0){                           // Need a longer delay to give time to return to pos 0
-            trig_pulse.start_time = Schedule(700);
-            change_duty = Schedule(1000);
+            trig_pulse.start_time = Schedule(500);
+            change_duty = Schedule(700);
         } else{
-            trig_pulse.start_time = Schedule(200);
-            change_duty = Schedule(400);
+            trig_pulse.start_time = Schedule(100);
+            change_duty = Schedule(250);
         }
     }
 
@@ -327,7 +293,7 @@ __interrupt void Timer_A(void) {
                 closest_position = FindMinIndex(avg_distances);
                 //TA0CCR2 = 300 + closest_position*180;
                 TA0CCR2 = 1200;                              // Reset servo position to face fwd
-                make_decision = Schedule(2000);
+                make_decision = Schedule(200);
                 change_duty = Schedule(-1);
                 distance = 1000.0;
             }
@@ -361,22 +327,14 @@ int main(void)
 
     P3DIR &= ~IR;
 
-    P1SEL = BIT1 + BIT2 ;                     // P1.1 = RXD, P1.2=TXD
-    P1SEL2 = BIT1 + BIT2 ;                     // P1.1 = RXD, P1.2=TXD
-    UCA0CTL1 |= UCSSEL_1;                     // CLK = ACLK
-    UCA0BR0 = 0x03;                           // 32kHz/9600 = 3.41
-    UCA0BR1 = 0x00;                           //
-    UCA0MCTL = UCBRS1 + UCBRS0;               // Modulation UCBRSx = 3
-    UCA0CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
-    IE2 |= UCA0RXIE;                          // Enable USCI_A0 RX interrupt
+    initUART();
 
-    __delay_cycles(1000000);
-
-    //IFG2 = 0x00;                                           // Reset IFG2
-    initI2C();                                             // Init I2C for reading mpu6050
+    initI2C();                                              // Init I2C for reading mpu6050
     while ( IsI2CBusy() );
 
-    initMPU();                                             // Wake up MPU & config registers
+    __delay_cycles(1000000);                                // Need to wait before talking to mpu
+
+    initMPU();                                              // Wake up MPU & config registers
 
     gyro_error = CalibrateGyro(100);                       // Get average error of gyro z axis
 
@@ -385,10 +343,7 @@ int main(void)
 
     volatile float temp1 = 0;
 
-    //LPM1;
-
     while (1) {
-
 
         gyro_pulse.start_time = gyro_pulse.stop_time;
         gyro_pulse.stop_time = current_time;
@@ -399,16 +354,11 @@ int main(void)
         if (abs(temp1)<=5){
             gyro_angle += temp1;
         } else{
-            gyro_angle-= temp1;
+
+            initI2C();
+            while ( IsI2CBusy() );
+            initMPU();
         }
-
-
-
-        if (time_elapsed >= 0.1){
-            time_elapsed = 0;
-        }
-
-
     }
     return 0;
 }

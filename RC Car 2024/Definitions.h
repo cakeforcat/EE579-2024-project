@@ -34,8 +34,8 @@
 #define TRIG    (BIT7)                                       // HCSR04 - Trigger pulse GPIO
 
 // PWM DUTY
-#define SPEED_PWM_HIGH 4
-#define SPEED_PWM_LOW 6
+#define SPEED_PWM_HIGH 5
+#define SPEED_PWM_LOW 5
 
 // STATES
 #define IDLE_STATE 0
@@ -73,9 +73,5 @@ extern float CalcDistance(struct Echo start_time, struct Echo end_time);
 extern float CalcElapsedTime(struct Time startTime, struct Time stopTime);
 extern int FindMinIndex(float array[]);
 extern bool IsWall(float array[]);
-extern void send_char(char c);
-extern void send_string(const char *str);
-extern void send_int(int num);
-
 
 #endif DEFINITIONS_H_
