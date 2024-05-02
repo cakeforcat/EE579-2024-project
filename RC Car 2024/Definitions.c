@@ -105,3 +105,25 @@ bool IsWall(float array[]) {
     }
     return false;
 }
+
+int FindClosest(float arr[], float target) {
+
+    // Initialize variables to keep track of closest value and its index
+    float minDiff = fabs(target - arr[0]);
+    int closestIndex = 0;
+
+    // Iterate through the array to find the closest value
+    int i;
+    for (i = 1; i < 11; i++) {
+        float diff = fabs(target - arr[i]);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestIndex = i;
+        }
+    }
+
+    int angle = -60 + closestIndex*12;
+
+    // Return the index of the closest value
+    return angle;
+}

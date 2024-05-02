@@ -37,13 +37,18 @@
 #define SPEED_PWM_HIGH 5
 #define SPEED_PWM_LOW 5
 
+// SERVO POS
+#define FWD_POS  1340
+#define RIGHT_POS 300
+#define LEFT_POS 2340
+
 // STATES
 #define IDLE_STATE 0
 #define GO_PLAY_STATE 1
 #define WIDE_SCAN_STATE 2
 #define TURN_STATE 3
 #define HONING_STATE 4
-#define NARROW_SCAN_STATE 4
+#define NARROW_SCAN_STATE 5
 
 // Macro for checking if it is time (taken from James' example on MyPlace)
 #define IsTime(X) ((current_time.sec == X.sec) && (current_time.ms == X.ms))
@@ -74,5 +79,6 @@ extern float CalcDistance(struct Echo start_time, struct Echo end_time);
 extern float CalcElapsedTime(struct Time startTime, struct Time stopTime);
 extern int FindMinIndex(float array[]);
 extern bool IsWall(float array[]);
+extern int FindClosest(float arr[], float target);
 
 #endif DEFINITIONS_H_

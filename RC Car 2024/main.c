@@ -33,7 +33,7 @@ struct Echo edge_times[2];
 volatile int e = 0;
 volatile float  distance = 1000;
 float avg_distances[11];                                     // Array to store avg distance recorded at 7 positions
-int position_index = 0;                                     // Index of array above
+int position_index = -1;                                     // Index of array above
 int closest_position;
 
 // Servo vars
@@ -52,6 +52,7 @@ volatile float delta;
 // Algorithm state var
 int state = 0;
 int turn_count = 0;
+int closest_val = 0;
 int n_turns;
 
 
@@ -84,10 +85,14 @@ __interrupt void TIMER1_ISR0(void)
 
     if (state == GO_PLAY_STATE) {
 
-        if (IsTime(move_fwd.stop_time) || distance <= 120){
+        if (IsTime(move_fwd.stop_time) || distance <= 40){
             move_fwd.stop_time = current_time;
-            change_duty = Schedule(200);
-            state = WIDE_SCAN_STATE;
+            move_bwd.start_time = current_time;
+            move_bwd.stop_time = Schedule(400);
+            change_duty = Schedule(700);
+            state = IDLE_STATE;
+            //state = WIDE_SCAN_STATE;
+            //closest_val = 30;
         }
     }
     if IsTime(make_decision){                               // Time to make decision after scanning?
@@ -99,10 +104,10 @@ __interrupt void TIMER1_ISR0(void)
 
         } else if (state == NARROW_SCAN_STATE){
             if (IsWall(avg_distances)){                     // See definitions.c
-                move_bwd_pwm.start_time = current_time;
-                move_bwd.stop_time  = Schedule(500);
-                state = WIDE_SCAN_STATE;
-                change_duty = Schedule(600);
+                move_fwd_pwm.start_time = current_time;
+                move_fwd.stop_time  = Schedule(500);
+                check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
+                state = TURN_STATE;
             } else{
                 move_fwd_pwm.start_time = current_time;
                 move_fwd.stop_time  = Schedule(500);
@@ -204,7 +209,7 @@ __interrupt void TIMER1_ISR0(void)
         TA0CCR0 = 20000;                                    // 20 ms PWM period
 
         if (state == WIDE_SCAN_STATE){                      // Different scan positions dependent on state
-            pos = position_index*180;
+            pos = position_index*204;
             TA0CCR2 = 300 + pos;
         } else if (state == NARROW_SCAN_STATE){
             pos = position_index*125;
@@ -298,9 +303,15 @@ __interrupt void Timer_A(void) {
 
             if (position_index == 11){
                 position_index = 0;
-                closest_position = FindMinIndex(avg_distances);
+
+                if (closest_val){
+                    closest_position = FindClosest(avg_distances, closest_val);
+                    closest_val = 0;
+                } else{
+                    closest_position = FindMinIndex(avg_distances);
+                }
                 //TA0CCR2 = 300 + closest_position*180;
-                TA0CCR2 = 1200;                              // Reset servo position to face fwd
+                TA0CCR2 = FWD_POS;                              // Reset servo position to face fwd
                 make_decision = Schedule(200);
                 change_duty = Schedule(-1);
                 distance = 1000.0;
@@ -346,10 +357,10 @@ int main(void)
 
     // Get ready to go
     TA0CCR0 = 20000;
-    TA0CCR2 = 1200;
+    TA0CCR2 = 1340;
     move_fwd_pwm.start_time = Schedule(500);
     trig_pulse.start_time = Schedule(700);
-    move_fwd.stop_time = Schedule(3700);
+    move_fwd.stop_time = Schedule(10700);
     state+=1;                                               // Move out of INIT and into go play state
 
     volatile float temp1 = 0;
