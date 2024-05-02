@@ -12,11 +12,14 @@
 #include "mpu6050.h"
 #include "Definitions.h"
 
+
+
 // Structure instances to store current time and scheduled events
 struct Time current_time = {0, 0};                          // Self explanatory
 struct Time change_duty = {0, -1};                           // Time to schedule change in servo duty cycle
 struct Time make_decision = {0, -1};                        // Time to make a decision after scanning
 struct Time check_colour = {0, -1};
+struct Time check_angle = {0, -1};
 
 // Movement structs
 struct Pulse move_fwd = {{0,-500}, {0, -600}};
@@ -49,11 +52,14 @@ float time_elapsed;
 float desired_angle;
 volatile float delta;
 
-// Algorithm state var
+// Algorithm var
 int state = 0;
 int turn_count = 0;
 int closest_val = 0;
 int n_turns;
+int adjust_time = 40;
+int fast_speed = 7;
+int slow_speed = 3;
 
 
 
@@ -85,15 +91,41 @@ __interrupt void TIMER1_ISR0(void)
 
     if (state == GO_PLAY_STATE) {
 
-        if (IsTime(move_fwd.stop_time) || distance <= 40){
+        if (IsTime(move_fwd.stop_time) || (current_time.sec > 3 && distance <= 50) ){
             move_fwd.stop_time = current_time;
-            move_bwd.start_time = current_time;
-            move_bwd.stop_time = Schedule(400);
-            change_duty = Schedule(700);
-            state = IDLE_STATE;
-            //state = WIDE_SCAN_STATE;
-            //closest_val = 30;
+            move_bwd_pwm.start_time = current_time;
+            move_bwd.stop_time = Schedule(1200);
+            change_duty = Schedule(1200);
+            state = WIDE_SCAN_STATE;
+            closest_val = 30;
+            fast_speed = 7;
+            slow_speed = 3;
         }
+
+        if (current_time.sec > 2){
+            fast_speed = 5;
+            slow_speed = 5;
+        }
+
+        if (current_time.sec > 3){
+            fast_speed = 4;
+            slow_speed = 6;
+        }
+
+        if IsTime(check_angle){
+            if (abs(gyro_angle) > 1){
+                if (gyro_angle < 0) {
+                    move_left.start_time = current_time;
+                    move_left.stop_time = Schedule(adjust_time);
+                } else{
+                    move_right.start_time = current_time;
+                    move_right.stop_time = Schedule(adjust_time);
+                }
+            }
+
+            check_angle = Schedule(250);
+        }
+
     }
     if IsTime(make_decision){                               // Time to make decision after scanning?
 
@@ -105,12 +137,12 @@ __interrupt void TIMER1_ISR0(void)
         } else if (state == NARROW_SCAN_STATE){
             if (IsWall(avg_distances)){                     // See definitions.c
                 move_fwd_pwm.start_time = current_time;
-                move_fwd.stop_time  = Schedule(500);
+                move_fwd.stop_time  = Schedule(700);
                 check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
                 state = TURN_STATE;
             } else{
                 move_fwd_pwm.start_time = current_time;
-                move_fwd.stop_time  = Schedule(500);
+                move_fwd.stop_time  = Schedule(700);
                 check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
                 state = TURN_STATE;
             }
@@ -260,20 +292,20 @@ __interrupt void TIMER1_ISR0(void)
     // Speed controlled movements
     if IsTime(move_fwd_pwm.start_time){                     // Move Fwd 50% speed
         P2OUT|= FWD;
-        move_fwd_pwm.stop_time = Schedule(SPEED_PWM_HIGH);  // Adjust speed in Definitions.h if required
+        move_fwd_pwm.stop_time = Schedule(fast_speed);  // Adjust speed in Definitions.h if required
     }
     else if IsTime(move_fwd_pwm.stop_time){
         P2OUT &= ~FWD;
-        move_fwd_pwm.start_time = Schedule(SPEED_PWM_LOW);
+        move_fwd_pwm.start_time = Schedule(slow_speed);
     }
 
     if IsTime(move_bwd_pwm.start_time){
         P2OUT |= BWD;
-        move_bwd_pwm.stop_time = Schedule(SPEED_PWM_HIGH);
+        move_bwd_pwm.stop_time = Schedule(fast_speed);
     }
     else if IsTime(move_bwd_pwm.stop_time){
         P2OUT &= ~BWD;
-        move_bwd_pwm.start_time = Schedule(SPEED_PWM_LOW);
+        move_bwd_pwm.start_time = Schedule(slow_speed);
     }
 
     TA1CCTL0 &= ~CCIFG;                                     // Clear IFG
@@ -359,8 +391,9 @@ int main(void)
     TA0CCR0 = 20000;
     TA0CCR2 = 1340;
     move_fwd_pwm.start_time = Schedule(500);
+    check_angle = Schedule(1000);
     trig_pulse.start_time = Schedule(700);
-    move_fwd.stop_time = Schedule(10700);
+    move_fwd.stop_time = Schedule(10500);
     state+=1;                                               // Move out of INIT and into go play state
 
     volatile float temp1 = 0;

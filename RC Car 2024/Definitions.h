@@ -33,10 +33,6 @@
 #define IR      (BIT4)                                       // IR Sensor
 #define TRIG    (BIT7)                                       // HCSR04 - Trigger pulse GPIO
 
-// PWM DUTY
-#define SPEED_PWM_HIGH 5
-#define SPEED_PWM_LOW 5
-
 // SERVO POS
 #define FWD_POS  1340
 #define RIGHT_POS 300
