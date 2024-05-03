@@ -91,10 +91,10 @@ bool IsWall(float array[]) {
     int j;
 
     // Check for consecutive numbers w/ +- 3 cm
-    for (i = 0; i <= size - 5; i++) {
+    for (i = 0; i <= size - 6; i++) {
         bool consecutive = true;
-        for (j = i + 1; j < i + 5; j++) {
-            if (abs(array[j] - array[j - 1]) > 5) {
+        for (j = i + 1; j < i + 6; j++) {
+            if (abs(array[j] - array[j - 1]) > 3) {
                 consecutive = false;
                 break;
             }

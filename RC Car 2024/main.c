@@ -54,7 +54,7 @@ volatile float delta;
 
 // Algorithm var
 int state = 0;
-int turn_count = 0;
+int can_count = 0;
 int closest_val = 0;
 int n_turns;
 int adjust_time = 40;
@@ -103,16 +103,19 @@ __interrupt void TIMER1_ISR0(void)
         }
 
         if (current_time.sec > 2){
-            fast_speed = 5;
-            slow_speed = 5;
-        }
-
-        if (current_time.sec > 3){
             fast_speed = 4;
             slow_speed = 6;
         }
 
         if IsTime(check_angle){
+
+
+            if (current_time.sec < 2){
+                adjust_time--;
+            } else{
+                adjust_time = 30;
+            }
+
             if (abs(gyro_angle) > 1){
                 if (gyro_angle < 0) {
                     move_left.start_time = current_time;
@@ -122,29 +125,57 @@ __interrupt void TIMER1_ISR0(void)
                     move_right.stop_time = Schedule(adjust_time);
                 }
             }
-
             check_angle = Schedule(250);
         }
-
     }
+
     if IsTime(make_decision){                               // Time to make decision after scanning?
 
         if (state == WIDE_SCAN_STATE){
+
             turn_time = Schedule(210);
             desired_angle = gyro_angle + closest_position;
             state = TURN_STATE;
 
         } else if (state == NARROW_SCAN_STATE){
-            if (IsWall(avg_distances)){                     // See definitions.c
+
+            if (can_count == 0){
+
                 move_fwd_pwm.start_time = current_time;
                 move_fwd.stop_time  = Schedule(700);
                 check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
                 state = TURN_STATE;
+
             } else{
-                move_fwd_pwm.start_time = current_time;
-                move_fwd.stop_time  = Schedule(700);
-                check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
-                state = TURN_STATE;
+
+                if (IsWall(avg_distances)){                     // See definitions.c
+
+                    if (gyro_angle<0){
+
+                        move_bwd_pwm.start_time = current_time;
+                        move_bwd.stop_time = Schedule(500);
+                        move_right.start_time = current_time;
+                        move_right.stop_time = Schedule(500);
+
+                    } else {
+                        move_bwd_pwm.start_time = current_time;
+                        move_bwd.stop_time = Schedule(500);
+                        move_left.start_time = current_time;
+                        move_left.stop_time = Schedule(500);
+                    }
+
+                    move_fwd_pwm.start_time = Schedule(600);
+                    move_fwd.stop_time = Schedule(1200);
+                    change_duty = Schedule(1500);
+                    state = WIDE_SCAN_STATE;
+
+                } else{
+                    move_fwd_pwm.start_time = current_time;
+                    move_fwd.stop_time  = Schedule(700);
+                    check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
+                    state = TURN_STATE;
+                }
+
             }
         }
     }
@@ -153,7 +184,7 @@ __interrupt void TIMER1_ISR0(void)
 
             delta = gyro_angle - desired_angle;
 
-            if (abs(delta) <= 5 || distance <= 25 || (abs(delta) <= 12 && distance <= 60)){
+            if (abs(delta) <= 5 || distance <= 25 || (abs(delta) <= 12 && distance <= 70)){
                 distance = 1000;
                 trig_pulse.start_time = Schedule(500);      // Start measuring distance again
                 move_fwd_pwm.start_time = Schedule(200);    // And schedule fwd movement as we're entering Honing state
@@ -192,14 +223,22 @@ __interrupt void TIMER1_ISR0(void)
     }
 
     if (state == HONING_STATE){                             // When in honing state - keep monitoring distance
+        TA0CCR2 = FWD_POS;
+
         if (distance <= 25){                                // If very close
             move_fwd.stop_time = current_time;              // stop
 
             move_bwd.start_time = current_time;
             move_bwd.stop_time = Schedule(200);
 
-            change_duty = Schedule(400);                    // Scan...
-            state = NARROW_SCAN_STATE;                      // Go to NARROW SCAN
+            if (can_count == 0){
+                state = NARROW_SCAN_STATE;
+                make_decision = Schedule(200);
+            } else{
+                change_duty = Schedule(400);                    // Scan...
+                state = NARROW_SCAN_STATE;                      // Go to NARROW SCAN
+            }
+
         }                                                   // If kind of close or timeout
         else if (distance <= 40||IsTime(move_fwd.stop_time)){
             move_fwd.stop_time = current_time;              // Stop
@@ -215,9 +254,28 @@ __interrupt void TIMER1_ISR0(void)
             move_fwd.start_time = Schedule(400);            // Then hit can
             move_fwd.stop_time = Schedule(1200);
         } else{
-            move_bwd.start_time = current_time;
-            move_bwd.stop_time = Schedule(500);
+
+            move_bwd_pwm.start_time = current_time;
+            move_bwd.stop_time = Schedule(1000);
+
+            move_fwd_pwm.start_time = Schedule(1000);
+            move_fwd.stop_time = Schedule(2500);
+
+            if (gyro_angle < 0){
+
+                move_right.start_time = Schedule(1000);
+                move_right.stop_time = Schedule(2000);
+                move_left.start_time = Schedule(2000);
+                move_left.stop_time = Schedule(2500);
+            } else {
+                move_left.start_time = Schedule(1000);
+                move_left.stop_time = Schedule(2000);
+                move_right.start_time = Schedule(2000);
+                move_right.stop_time = Schedule(2500);
+            }
+
         }
+        can_count ++;
         state = WIDE_SCAN_STATE;
         change_duty = Schedule(1300);
 
@@ -391,9 +449,10 @@ int main(void)
     TA0CCR0 = 20000;
     TA0CCR2 = 1340;
     move_fwd_pwm.start_time = Schedule(500);
-    check_angle = Schedule(1000);
+    check_angle = Schedule(1000); //- here
     trig_pulse.start_time = Schedule(700);
     move_fwd.stop_time = Schedule(10500);
+    //10500 - here
     state+=1;                                               // Move out of INIT and into go play state
 
     volatile float temp1 = 0;
