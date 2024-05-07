@@ -114,7 +114,7 @@ int FindClosest(float arr[], float target) {
 
     // Iterate through the array to find the closest value
     int i;
-    for (i = 1; i < 11; i++) {
+    for (i = 2; i < 10; i++) {
         float diff = fabs(target - arr[i]);
         if (diff < minDiff) {
             minDiff = diff;

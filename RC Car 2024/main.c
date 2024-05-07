@@ -12,56 +12,48 @@
 #include "mpu6050.h"
 #include "Definitions.h"
 
-
-
 // Structure instances to store current time and scheduled events
 struct Time current_time = {0, 0};                          // Self explanatory
-struct Time change_duty = {0, -1};                           // Time to schedule change in servo duty cycle
+struct Time change_duty = {0, -1};                          // Time to schedule change in servo duty cycle
 struct Time make_decision = {0, -1};                        // Time to make a decision after scanning
-struct Time check_colour = {0, -1};
-struct Time check_angle = {0, -1};
+struct Time check_colour = {0, -1};                         // Time to check can colour
+struct Time check_angle = {0, -1};                          // Time to check car orientation when going in straight line
+struct Time turn_time = {0, -1};                            // Time to adjust car orientation
 
-// Movement structs
-struct Pulse move_fwd = {{0,-500}, {0, -600}};
+// Movement structs - moving in each dir + speed controlled drives
+struct Pulse move_fwd = {{0,-1}, {0, -1}};
 struct Pulse move_fwd_pwm = {{0, -1}, {0, -1}};
-struct Pulse move_bwd = {{1,-500}, {1, -600}};
+struct Pulse move_bwd = {{0,-1}, {0, -1}};
 struct Pulse move_bwd_pwm = {{0, -1}, {0, -1}};
-struct Pulse move_right = {{2,-500}, {2, -600}};
-struct Pulse move_left = {{3,-500}, {3, -600}};
-struct Time  turn_time = {0, -1};
+struct Pulse move_right = {{0,-1}, {0, -1}};
+struct Pulse move_left = {{0,-1}, {0, -1}};
 
 // Sonic vars
 struct Pulse trig_pulse = {{0, -60}, {0, -1}};               // Trig pulse - PWM 70ms w/ 10ms duty cycle
-struct Echo edge_times[2];
-volatile int e = 0;
-volatile float  distance = 1000;
+struct Echo edge_times[2];                                   // Storing times of rising and falling edge
+volatile int e = 0;                                          // Edge index
+volatile float  distance = 1000;                             // Init distance as high val
 float avg_distances[11];                                     // Array to store avg distance recorded at 7 positions
 int position_index = -1;                                     // Index of array above
-int closest_position;
+int closest_position;                                        // Closest object
 
 // Servo vars
-struct Pulse servo_pulse = {{0, 20}, {0, -1}};
-volatile int pos = 0;
-unsigned int dir = 0;
+volatile int pos = 0;                                        // TA0CCR2 offset to achieve desired pos
 
 // GYRO vars
-volatile float gyro_error;
-volatile float gyro_angle = 0.0;
-struct Pulse gyro_pulse = {{0, 0}, {0, 0}};
-float time_elapsed;
-float desired_angle;
-volatile float delta;
+volatile float gyro_error;                                   // Avg error calculated during calibration
+volatile float gyro_angle = 0.0;                             // Tracking of orientation
+struct Pulse gyro_pulse = {{0, 0}, {0, 0}};                  // Current and prev time of gyro read
+float time_elapsed;                                          // Time elapsed between gyro readings
+float desired_angle;                                         // Desired vehicle orientation after scan
+volatile float delta;                                        // Diff in angle during re-orientation
 
-// Algorithm var
-int state = 0;
-int can_count = 0;
-int closest_val = 0;
-int n_turns;
-int adjust_time = 40;
-int fast_speed = 7;
-int slow_speed = 3;
-
-
+// Movement Algorithm var
+int state = 0;                                               // Self explanatory
+int can_count = 0;                                           // Number of objects we have treated as a can (white or black)
+int adjust_time = 40;                                        // Time to steer for when correcting angle
+int high_time = 7;                                           // High time for speed control of motors
+int low_time = 3;                                            // and low time
 
 // Scheduler function (James' example on MyPlace)
 struct Time Schedule (int duration)
@@ -72,7 +64,7 @@ struct Time Schedule (int duration)
             (current_time.ms + duration) / 1000;            // Calculate secs- adding current seconds and duration in milliseconds
 
     new_time.ms = (current_time.ms + duration) % 1000;      // Calculate remaining ms
-    new_time.sec %= 60;                                     // Ensure that seconds do not exceed 59
+    new_time.sec %= 120;                                    // Ensure that seconds do not exceed 59
 
     return new_time;                                        // Return scheduled time
 }
@@ -84,40 +76,43 @@ __interrupt void TIMER1_ISR0(void)
     // Maintaining current time structure
     if (current_time.ms++ == 0x400){                        // Has a second passed?
         current_time.ms = 0;                                // Reset to 0 ms
-        if (current_time.sec++ == 60){                      // Increment s and check if = 60
-            current_time.sec = 0;                           // Reset to 0 s
+        if (current_time.sec++ == 120){                     // Increment s and check if = 60
+            P2OUT &= FWD & BWD;
+            P3OUT &= LEFT & RIGHT;
+            __disable_interrupt();                          // Reset to 0 s
         }
     }
 
+    // Getting to the play area while following a straight line
     if (state == GO_PLAY_STATE) {
 
-        if (IsTime(move_fwd.stop_time) || (current_time.sec > 3 && distance <= 50) ){
+        // Stop fwd when timeout || object detected after 3 seconds
+        if (IsTime(move_fwd.stop_time) || (current_time.sec > 3 && distance <= 70) ){
             move_fwd.stop_time = current_time;
             move_bwd_pwm.start_time = current_time;
-            move_bwd.stop_time = Schedule(1200);
+            move_bwd.stop_time = Schedule(700);
             change_duty = Schedule(1200);
             state = WIDE_SCAN_STATE;
-            closest_val = 30;
-            fast_speed = 7;
-            slow_speed = 3;
+            high_time = 7;
+            low_time = 3;
         }
 
+        // Change speed after 2 s to slow down for breaking
         if (current_time.sec > 2){
-            fast_speed = 4;
-            slow_speed = 6;
+            high_time = 4;
+            low_time = 6;
         }
 
+        // Check current angle every 250 ms
         if IsTime(check_angle){
-
-
-            if (current_time.sec < 2){
+            if (current_time.sec < 2){                      // Decrement steering correction time - gets more violent as time elapses
                 adjust_time--;
-            } else{
+            } else{                                         // Can keep constant when we are in the slower speeds
                 adjust_time = 30;
             }
 
-            if (abs(gyro_angle) > 1){
-                if (gyro_angle < 0) {
+            if (abs(gyro_angle) > 1){                       // If deviation > 1 then we need some control action
+                if (gyro_angle < 0) {                       // Steer right or left based on polarity of angle
                     move_left.start_time = current_time;
                     move_left.stop_time = Schedule(adjust_time);
                 } else{
@@ -125,7 +120,7 @@ __interrupt void TIMER1_ISR0(void)
                     move_right.stop_time = Schedule(adjust_time);
                 }
             }
-            check_angle = Schedule(250);
+            check_angle = Schedule(250);                    // Rescheduling angle check
         }
     }
 
@@ -133,24 +128,23 @@ __interrupt void TIMER1_ISR0(void)
 
         if (state == WIDE_SCAN_STATE){
 
-            turn_time = Schedule(210);
-            desired_angle = gyro_angle + closest_position;
-            state = TURN_STATE;
+            turn_time = Schedule(210);                      // Schedule turning
+            desired_angle = gyro_angle + closest_position;  // Calculate our desired angle with current angle as start angle
+            state = TURN_STATE;                             // Go into turn state
 
-        } else if (state == NARROW_SCAN_STATE){
+        } else if (state == NARROW_SCAN_STATE){             // If in narrow scan state ( closer to can)
 
-            if (can_count == 0){
-
-                move_fwd_pwm.start_time = current_time;
+            if (can_count == 0){                            // If this is first can encountered
+                move_fwd_pwm.start_time = current_time;     // Then go closer to investigate
                 move_fwd.stop_time  = Schedule(700);
-                check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
+                check_colour = Schedule(1500);              // Check colour scheduling
                 state = TURN_STATE;
 
-            } else{
+            } else{                                         // If this isnt the first can encountered
 
-                if (IsWall(avg_distances)){                     // See definitions.c
+                if (IsWall(avg_distances)){                 // Then we need to check if the object is a wall (definitions.c)
 
-                    if (gyro_angle<0){
+                    if (gyro_angle<0){                      // Based on gyro angle try to return to our line
 
                         move_bwd_pwm.start_time = current_time;
                         move_bwd.stop_time = Schedule(500);
@@ -164,15 +158,15 @@ __interrupt void TIMER1_ISR0(void)
                         move_left.stop_time = Schedule(500);
                     }
 
-                    move_fwd_pwm.start_time = Schedule(600);
+                    move_fwd_pwm.start_time = Schedule(600);// Go forward so that we might end up closer to can rather than wall this time
                     move_fwd.stop_time = Schedule(1200);
                     change_duty = Schedule(1500);
-                    state = WIDE_SCAN_STATE;
+                    state = WIDE_SCAN_STATE;                // Start scanning again
 
                 } else{
                     move_fwd_pwm.start_time = current_time;
                     move_fwd.stop_time  = Schedule(700);
-                    check_colour = Schedule(1000);              // Schedule check colour if it isnt a wall
+                    check_colour = Schedule(1000);          // Schedule check colour if it isnt a wall
                     state = TURN_STATE;
                 }
 
@@ -188,7 +182,7 @@ __interrupt void TIMER1_ISR0(void)
                 distance = 1000;
                 trig_pulse.start_time = Schedule(500);      // Start measuring distance again
                 move_fwd_pwm.start_time = Schedule(200);    // And schedule fwd movement as we're entering Honing state
-                move_fwd.stop_time = Schedule(1000);        // Set a timeout for how long we want to hone for in case we miss target
+                move_fwd.stop_time = Schedule(1500);        // Set a timeout for how long we want to hone for in case we miss target
                 turn_time = Schedule(-1);
                 state = HONING_STATE;
 
@@ -217,8 +211,8 @@ __interrupt void TIMER1_ISR0(void)
 
                 }
 
-                trig_pulse.start_time = Schedule(750);
-                turn_time = Schedule(900);
+                trig_pulse.start_time = Schedule(750);      // Schedule trig near end of turn so we can check distance
+                turn_time = Schedule(900);                  // Reschedule turn
             }
     }
 
@@ -228,15 +222,12 @@ __interrupt void TIMER1_ISR0(void)
         if (distance <= 25){                                // If very close
             move_fwd.stop_time = current_time;              // stop
 
-            move_bwd.start_time = current_time;
-            move_bwd.stop_time = Schedule(200);
-
             if (can_count == 0){
                 state = NARROW_SCAN_STATE;
                 make_decision = Schedule(200);
             } else{
-                change_duty = Schedule(400);                    // Scan...
-                state = NARROW_SCAN_STATE;                      // Go to NARROW SCAN
+                change_duty = Schedule(400);                // Scan...
+                state = NARROW_SCAN_STATE;                  // Go to NARROW SCAN
             }
 
         }                                                   // If kind of close or timeout
@@ -248,37 +239,36 @@ __interrupt void TIMER1_ISR0(void)
     }
 
     if IsTime(check_colour){                                // Check IR for colour
+
         if (P3IN & IR){
             move_bwd.start_time = current_time;             // Go bwd to gain some speed
             move_bwd.stop_time  = Schedule(300);
             move_fwd.start_time = Schedule(400);            // Then hit can
             move_fwd.stop_time = Schedule(1200);
-        } else{
+            change_duty = Schedule(1300);
+        } else{                                             // If white then we...
 
-            move_bwd_pwm.start_time = current_time;
-            move_bwd.stop_time = Schedule(1000);
+            move_bwd_pwm.start_time = current_time;         // reverse
+            move_bwd.stop_time = Schedule(1000);            // (for as much as a second to be safe)
 
-            move_fwd_pwm.start_time = Schedule(1000);
-            move_fwd.stop_time = Schedule(2500);
+            move_fwd_pwm.start_time = Schedule(1700);       // Then move fwd
+            move_fwd.stop_time = Schedule(3500);
 
-            if (gyro_angle < 0){
+            if (gyro_angle < 0){                            // The direction we want to steer while moving fwd depends on orientation
 
-                move_right.start_time = Schedule(1000);
-                move_right.stop_time = Schedule(2000);
-                move_left.start_time = Schedule(2000);
-                move_left.stop_time = Schedule(2500);
+                move_right.start_time = Schedule(1500);
+                move_right.stop_time = Schedule(3000);
             } else {
-                move_left.start_time = Schedule(1000);
-                move_left.stop_time = Schedule(2000);
-                move_right.start_time = Schedule(2000);
-                move_right.stop_time = Schedule(2500);
+
+                move_left.start_time = Schedule(1500);
+                move_left.stop_time = Schedule(3000);
             }
 
+            change_duty = Schedule(3500);
         }
-        can_count ++;
-        state = WIDE_SCAN_STATE;
-        change_duty = Schedule(1300);
 
+        can_count ++;                                       // Incremement can count every time we reach check colour
+        state = WIDE_SCAN_STATE;
     }
 
     if IsTime(trig_pulse.start_time){                       // Is it time to make TRIG pulse high?
@@ -348,22 +338,22 @@ __interrupt void TIMER1_ISR0(void)
     }
 
     // Speed controlled movements
-    if IsTime(move_fwd_pwm.start_time){                     // Move Fwd 50% speed
+    if IsTime(move_fwd_pwm.start_time){                     // Move Fwd with controlled speed
         P2OUT|= FWD;
-        move_fwd_pwm.stop_time = Schedule(fast_speed);  // Adjust speed in Definitions.h if required
+        move_fwd_pwm.stop_time = Schedule(high_time);
     }
     else if IsTime(move_fwd_pwm.stop_time){
         P2OUT &= ~FWD;
-        move_fwd_pwm.start_time = Schedule(slow_speed);
+        move_fwd_pwm.start_time = Schedule(low_time);
     }
 
-    if IsTime(move_bwd_pwm.start_time){
+    if IsTime(move_bwd_pwm.start_time){                     // Same thing with bwd
         P2OUT |= BWD;
-        move_bwd_pwm.stop_time = Schedule(fast_speed);
+        move_bwd_pwm.stop_time = Schedule(high_time);
     }
     else if IsTime(move_bwd_pwm.stop_time){
         P2OUT &= ~BWD;
-        move_bwd_pwm.start_time = Schedule(slow_speed);
+        move_bwd_pwm.start_time = Schedule(low_time);
     }
 
     TA1CCTL0 &= ~CCIFG;                                     // Clear IFG
@@ -391,25 +381,18 @@ __interrupt void Timer_A(void) {
                 position_index++;                           // Only increment position when in a scan state
             }
 
-            if (position_index == 11){
-                position_index = 0;
+            if (position_index == 11){                      // Final servo position reached
 
-                if (closest_val){
-                    closest_position = FindClosest(avg_distances, closest_val);
-                    closest_val = 0;
-                } else{
-                    closest_position = FindMinIndex(avg_distances);
-                }
-                //TA0CCR2 = 300 + closest_position*180;
-                TA0CCR2 = FWD_POS;                              // Reset servo position to face fwd
-                make_decision = Schedule(200);
-                change_duty = Schedule(-1);
-                distance = 1000.0;
+                position_index = 0;                         // Reset index
+                closest_position = FindMinIndex(avg_distances); // (see definitions.c)
+                TA0CCR2 = FWD_POS;                          // Reset servo position to face fwd
+                make_decision = Schedule(200);              // We now need to make a decision based on our scan info
+                change_duty = Schedule(-1);                 // Stop scanning
+                distance = 1000.0;                          // Reset distance to be a v high val
             }
         }
     }
 }
-
 
 
 int main(void)
@@ -437,7 +420,7 @@ int main(void)
     initI2C();                                              // Init I2C for reading mpu6050
     while ( IsI2CBusy() );
 
-    __delay_cycles(1000000);                                // Need to wait before talking to mpu ~35 ms start up + some time to lay still before calibration
+    __delay_cycles(100000);                                 // Need to wait before talking to mpu ~35 ms start up + some time to lay still before calibration
 
     initMPU();                                              // Wake up MPU & config registers
 
@@ -446,31 +429,32 @@ int main(void)
     configTimerA1();                                        // Congig scheduler clock + echo capture reg
 
     // Get ready to go
-    TA0CCR0 = 20000;
-    TA0CCR2 = 1340;
-    move_fwd_pwm.start_time = Schedule(500);
-    check_angle = Schedule(1000); //- here
-    trig_pulse.start_time = Schedule(700);
-    move_fwd.stop_time = Schedule(10500);
-    //10500 - here
+    TA0CCR0 = 20000;                                        // Face servo fwd
+    TA0CCR2 = FWD_POS;
+
+    move_fwd_pwm.start_time = Schedule(100);                // Go fwd into play area
+    check_angle = Schedule(1000);                           // Start checking car's angle
+    trig_pulse.start_time = Schedule(700);                  // Start measuring distance
+    move_fwd.stop_time = Schedule(7700);                    // Schedule move fwd timeout in case we completely miss the cans!
     state+=1;                                               // Move out of INIT and into go play state
 
-    volatile float temp1 = 0;
+    volatile float reading = 0;                             // To store each reading of gyro
 
     while (1) {
 
-        gyro_pulse.start_time = gyro_pulse.stop_time;
+        gyro_pulse.start_time = gyro_pulse.stop_time;      // To keep track of time elapsed since last read
         gyro_pulse.stop_time = current_time;
 
+        // See definitions.c
         time_elapsed = CalcElapsedTime(gyro_pulse.start_time, gyro_pulse.stop_time);
-        temp1 = GetZReading(gyro_error) * time_elapsed;
+        reading = GetZReading(gyro_error) * time_elapsed;
 
-        if (abs(temp1)<=5){
-            gyro_angle += temp1;
-        } else{
-            initI2C();
+        if (abs(reading)<=5){                              // When abs reading <5, no error
+            gyro_angle += reading;
+        } else{                                            // Known bug: I2C bus dies after x amount of time
+            initI2C();                                     // So reset I2C bus
             while ( IsI2CBusy() );
-            initMPU();
+            initMPU();                                     // And reset MPU then init again
         }
     }
     return 0;

@@ -20,28 +20,28 @@ void initUART(){
 
 void send_char(char c) {
     // Wait for the transmit buffer to be ready
-    while (!(IFG2 & UCA0TXIFG)); // Check the UART transmit interrupt flag
-    UCA0TXBUF = c;               // Load the character into the UART transmit buffer
+    while (!(IFG2 & UCA0TXIFG));             // Check the UART transmit interrupt flag
+    UCA0TXBUF = c;                           // Load the character into the UART transmit buffer
 }
 
 // Function to send a string over UART
 void send_string(const char *str) {
     while (*str) {
-        send_char(*str++); // Send each character of the string
+        send_char(*str++);                   // Send each character of the string
     }
 }
 
 // Function to send an integer over UART
 void send_int(int num) {
-    char buffer[12]; // Buffer to hold the integer as a string
-    sprintf(buffer, "%d\r\n", num); // Convert the integer to a string
-    send_string(buffer); // Send the converted string
+    char buffer[12];                        // Buffer to hold the integer as a string
+    sprintf(buffer, "%d\r\n", num);         // Convert the integer to a string
+    send_string(buffer);                    // Send the converted string
 }
 
 // Function to send a floating-point number over UART
 void send_float(float num) {
-    char buffer[20]; // Buffer to hold the float as a string
-    int wholePart = (int)num; // Extract the whole part of the float
+    char buffer[20];                        // Buffer to hold the float as a string
+    int wholePart = (int)num;               // Extract the whole part of the float
     int decimalPart = (int)((num - wholePart) * 100); // Extract the first two decimal places
 
     // Convert whole part to string
@@ -58,10 +58,10 @@ void send_float(float num) {
     buffer[digits++] = '\n';
     buffer[digits] = '\0';
 
-    send_string(buffer); // Send the converted string
+    send_string(buffer);                    // Send the converted string
 }
 
-// Helper function to convert an integer to a string
+// Helper function to convert an integer to a string - NOT MY CODE
 int int_to_string(int num, char *buffer) {
     int i = 0;
     if (num < 0) {
