@@ -38,13 +38,13 @@ int main(void)
   WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
 
   P1SEL = BIT1 + BIT2 ;                     // P1.1 = RXD, P1.2=TXD
-  P1SEL2 = BIT1 + BIT2 ;                     // P1.1 = RXD, P1.2=TXD
+  P1SEL2 = BIT1 + BIT2 ;                     
 
   UCA0CTL1 |= UCSSEL_1;                     // Using the ACLK
   UCA0BR0 = 0x03;                           // Dividing by 3 gives a baud rate of approximately 9600
   UCA0BR1 = 0x00;                           //
   UCA0MCTL = UCBRS1 + UCBRS0;               // Modulation UCBRSx = 3
-  UCA0CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
+  UCA0CTL1 &= ~UCSWRST;                     // 
   IE2 |= UCA0RXIE;                          // Enable USCI_A0 RX interrupt
 
   BCSCTL1= CALBC1_1MHZ;
@@ -81,7 +81,7 @@ __interrupt void USCI0TX_ISR(void)
 __interrupt void USCI0RX_ISR(void)
 {
 
-    if (UCA0RXBUF == '1')                      //Case 1, checking for if a one has been received
+    if (UCA0RXBUF == '1')                      //Case 1, testing the servo motor
       {
           i = 0;
           IE2 |= UCA0TXIE;                       // Enabling the interruopt
@@ -98,7 +98,7 @@ __interrupt void USCI0RX_ISR(void)
 
       }
 
-      if (UCA0RXBUF == '2')                      //Checking for when there has been a 2 received
+      if (UCA0RXBUF == '2')                      //Checking for when there has been a 2 received, doing the IR test
       {
           send_string("IR Test\r\n");
           i2 = 0;
@@ -125,7 +125,7 @@ __interrupt void USCI0RX_ISR(void)
           send_string("\r\n");
       }
 
-      if (UCA0RXBUF == '3')
+      if (UCA0RXBUF == '3') //Checking that the IMU is reading properly
          {
                   i = 0;
                   IE2 |= UCA0TXIE;
@@ -148,14 +148,14 @@ __interrupt void USCI0RX_ISR(void)
                   IE2 |= UCA0TXIE;
                   long int time = 0;
                   float distance = 0;
-                  send_string("Doing the Ultrasonic test\r\n");
+                  send_string("Performing the Ultrasonic test\r\n");
 
                   while(i2 < 4){
 
                         i2++;
                       // Send a 10us high pulse to trigger the sensor
                         P3OUT |= TRIG;
-                        __delay_cycles(11); // 10us delay with 1MHz clock
+                        __delay_cycles(11); // 11us delay with 1.1MHz clock
                         P3OUT &= ~TRIG;
                         __delay_cycles(100);
                         // Initialize time counter
@@ -165,17 +165,17 @@ __interrupt void USCI0RX_ISR(void)
                         // Start measuring the length of the high pulse
                         while (!(P2IN & ECHO)) { //The pin is high
                             time++;
-                            if(time>=60000){ //To prevent a time out
+                            if(time>=60000){ //To prevent an infinite loop from occuring, a timeout has been used
                                 send_string("No reading\r\n");
                                 break;
                             }
                         }
 
-                        // Calculate distance in centimeters (speed of sound is 343 m/s, 58 microseconds per cm round trip)
+                        // Calculate distance in centimeters
                         distance = ((time * 343) / 2) / 60;
-                        //send_int(distance);
+                       
                         send_string("\r\n");
-                        // Add a short delay before the next cycle
+                        
 
                         }
          }
