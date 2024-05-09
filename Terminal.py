@@ -1,6 +1,8 @@
 #Code is taken and based on the GIT Hub repo UART terminal in the repo
 #https://github.com/linmh0130/GUI_UART_Demo/blob/master/GUI_UART_Demo.py
-
+#The last update to the code was the ultrasonic test button. This change should not affect the code and only adds tranmission of a "4"
+#Which will be handled on the MSP430 side once it has received a 4.
+#Grid was removed as the car no longer will take input from us and will just work on it's own
 import tkinter as tk
 from tkinter import ttk
 import serial
@@ -44,15 +46,16 @@ class MainGUI:
     def create_com_frame(self):
         frame_com_inf = tk.Frame(self.window)
         frame_com_inf.grid(row=1, column=1, sticky="ew") #Creating a grid and the placement for it
-        #COM port is set but this can be changed here or in the text box
-        tk.Label(frame_com_inf, text="COMx: ").grid(row=1, column=1, padx=5, pady=3)
+        #COM port is set but this can be changed here or in the text box. Check within the computer what 
+        #COM port the MSP is connected to and either change it here or within the GUI
+        tk.Label(frame_com_inf, text="COMx: ").grid(row=1, column=1, padx=5, pady=3) 
         self.com = tk.StringVar(value="/dev/cu.usbmodem11203")
         tk.Entry(frame_com_inf, textvariable=self.com).grid(row=1, column=2, padx=5, pady=3)
         #Baudrate is fixed and should need adjustment 
         tk.Label(frame_com_inf, text="Baudrate: ").grid(row=1, column=3, padx=5, pady=3)
         self.baudrate = tk.IntVar(value=9600)
         tk.Entry(frame_com_inf, textvariable=self.baudrate).grid(row=1, column=4, padx=5, pady=3)
-        #Buttons for each of the different test cases
+        #Buttons for each of the different test cases and just placing them next to each other in ref to the frame_com
         tk.Button(frame_com_inf, text="Test Servo", command=self.send_one).grid(row=4, column=1, padx=3, pady=2, sticky=tk.E)
         tk.Button(frame_com_inf, text="Test IR", command=self.send_two).grid(row=4, column=2, padx=3, pady=2, sticky=tk.E)
         tk.Button(frame_com_inf, text="Test IMU", command=self.send_three).grid(row=4, column=3, padx=3, pady=2, sticky=tk.E)
@@ -61,7 +64,7 @@ class MainGUI:
         self.button_ss = tk.Button(frame_com_inf, text="Start", command=self.toggle_uart)
         self.button_ss.grid(row=3, column=4, padx=5, pady=3, sticky=tk.E)
 
-    #Defining the tranmission (Tx) frame 
+    #Defining the transmission (Tx) frame 
     def create_transmission_frame(self):
         frame_trans = tk.Frame(self.window)
         frame_trans.grid(row=2, column=1)
@@ -143,13 +146,13 @@ class MainGUI:
             self.ser.write(data_to_send.encode('ascii'))
             #Reading in the UART and using ascii to encode/decode
     def read_uart(self):
-        while self.thread_active:
+        while self.thread_active: #While the uart is being used
             if self.uart_state and self.ser.is_open:
                 try:
                     data_received = self.ser.read(self.ser.in_waiting or 1).decode('ascii') #
                     if data_received:
                         self.output_text.after(0, self.update_received_data, data_received)
-                except serial.SerialException:
+                except serial.SerialException: #Handing the exception 
                     self.output_text.after(0, self.handle_serial_error)
 
     def update_received_data(self, data):
